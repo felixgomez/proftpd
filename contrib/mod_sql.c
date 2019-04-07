@@ -27,6 +27,7 @@
 #include "conf.h"
 #include "privs.h"
 #include "mod_sql.h"
+#include <sodium.h>
 #include "jot.h"
 
 #define MOD_SQL_VERSION			"mod_sql/4.4"
@@ -1050,6 +1051,19 @@ static int sql_resolve_on_other(pool *p, pr_jot_ctx_t *jot_ctx,
 }
 
 /* Default SQL password handlers (a.k.a. "AuthTypes") provided by mod_sql. */
+
+static modret_t *sql_auth_argon2i( cmd_rec * cmd, char const * plaintext,
+    const char *ciphertext) {
+
+    if (*ciphertext == '\0')
+      return PR_ERROR_INT(cmd, PR_AUTH_BADPWD);
+
+    int res = crypto_pwhash_argon2i_str_verify(ciphertext, plaintext, strlen(plaintext));
+    if (res == 0)
+      return PR_HANDLED(cmd);
+
+    return PR_ERROR_INT(cmd, PR_AUTH_BADPWD);
+}
 
 static modret_t *sql_auth_crypt(cmd_rec *cmd, const char *plaintext,
     const char *ciphertext) {
@@ -5818,6 +5832,7 @@ static void sql_mod_unload_ev(const void *event_data, void *user_data) {
 
     pr_event_unregister(&sql_module, NULL, NULL);
 
+    (void) sql_unregister_authtype("Argon2i");
     (void) sql_unregister_authtype("Crypt");
     (void) sql_unregister_authtype("Empty");
     (void) sql_unregister_authtype("Plaintext");
@@ -5909,6 +5924,7 @@ static int sql_init(void) {
 #endif /* PR_SHARED_MODULE */
 
   /* Register our built-in auth handlers. */
+  (void) sql_register_authtype("Argon2i", sql_auth_argon2i);
   (void) sql_register_authtype("Crypt", sql_auth_crypt);
   (void) sql_register_authtype("Empty", sql_auth_empty);
   (void) sql_register_authtype("Plaintext", sql_auth_plaintext);
